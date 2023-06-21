@@ -1,0 +1,25 @@
+{
+  "name": "feelpp-asciidoctor-extensions",
+  "version": "1.0.0",
+  "description": "",
+  "main": "src/plotly.js",
+  "scripts": {
+    "test": "mocha spec"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/feelpp/feelpp-asciidoctor-extensions.git"
+  },
+  "keywords": [],
+  "author": "Guillaume Grossetie <ggrossetie@yuzutech.fr>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/feelpp/feelpp-asciidoctor-extensions/issues"
+  },
+  "homepage": "https://github.com/feelpp/feelpp-asciidoctor-extensions#readme",
+  "devDependencies": {
+    "@asciidoctor/core": "~2.2",
+    "chai": "~4.3",
+    "mocha": "~10.2"
+  }
+}
