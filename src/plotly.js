@@ -11,6 +11,16 @@ module.exports.register = function register(registry, context = {}) {
 `
     })
   })
+  registry.treeProcessor(function () {
+    const self = this
+    self.process(function (doc) {
+      const blocks = doc.findBy({role: 'plotly'})
+      if (blocks.length > 0) {
+        doc.setAttribute('page-plotly', '')
+      }
+      return doc
+    })
+  })
   registry.block('plotly', function () {
     const self = this
     self.onContext(['listing', 'literal'])
@@ -32,7 +42,9 @@ module.exports.register = function register(registry, context = {}) {
       console.log('Unable to get data', err)
     })
 </script>`
-      return self.createPassBlock(parent, result, attrs)
+      const block = self.createPassBlock(parent, result, attrs)
+      block.addRole('plotly')
+      return block
     })
   })
 }

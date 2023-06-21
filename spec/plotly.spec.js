@@ -5,11 +5,11 @@ const expect = chai.expect
 const plotlyExt = require('../src/plotly.js')
 const asciidoctor = require('@asciidoctor/core')()
 
-describe('Block attributes', () => {
+describe('Plotly', () => {
   describe('When extension is registered', () => {
-    it('should convert a diagram with an explicit width and height', () => {
+    it('should create a plot using Plotly', () => {
       const input = `
-[plotly#test-1,https://girder.math.unistra.fr/api/v1/file/5afea86fb0e957402704804a/download]
+[plotly#test-1.foo,https://girder.math.unistra.fr/api/v1/file/5afea86fb0e957402704804a/download]
 ....
 // global d
 const times = d.map(i => i['T'])
@@ -50,7 +50,9 @@ const layout = {
 `
       const registry = asciidoctor.Extensions.create()
       plotlyExt.register(registry)
-      const html = asciidoctor.convert(input, {extension_registry: registry})
+      const doc = asciidoctor.load(input, {extension_registry: registry})
+      expect(doc.getAttribute('page-plotly')).to.equal('')
+      const html = doc.convert()
       expect(html).to.equal(`<div id="test-1"></div>
 <script>
   d3.csv("https://girder.math.unistra.fr/api/v1/file/5afea86fb0e957402704804a/download")
