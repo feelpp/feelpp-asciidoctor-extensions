@@ -1,7 +1,7 @@
 const { register: registerDynamicNotebookProcessor } = require('./dynamic-notebook-processor.js')
 const { register: registerMprirunCommandProcessor } = require('./mpirun-command-processor.js')
 const { register: registerPlotlyBlock } = require('./plotly-block-extension.js')
-const registerRemoteIncludeProcessor = require('./remote-include-processor.js')
+const { register: registerRemoteIncludeProcessor } = require('./remote-include-processor.js')
 const { register: registerTabsBlock } = require('./tabs-block-extension.js')
 const { register: registerVtkjsBlock } = require('./vtkjs-block-extension.js')
 
