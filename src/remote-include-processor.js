@@ -165,8 +165,8 @@ function applyLineFiltering (contents, linesToInclude) {
     return [lines, startLineNum || 1]
 }
 
-module.exports = function () {
-    this.includeProcessor(function () {
+module.exports.register = function register(registry) {
+  registry.includeProcessor(function () {
         this.$option('position', '>>')
         this.handles((target) => target.startsWith('https://'))
         this.process((doc, reader, target, attrs) => {
