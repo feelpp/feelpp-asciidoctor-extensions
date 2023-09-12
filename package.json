@@ -1,7 +1,7 @@
 {
   "name": "@feelpp/asciidoctor-extensions",
   "private": false,
-  "version": "1.0.0-rc.3",
+  "version": "1.0.0-rc.5",
   "description": "Asciidoctor Extensions by Feel++.",
   "main": "src/index.js",
   "scripts": {
