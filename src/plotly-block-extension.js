@@ -1,3 +1,4 @@
+// REMIND: once released we should use https://github.com/feelpp/feelpp-asciidoctor-extensions/blob/main/src/plotly.js
 const crypto = require('node:crypto')
 
 module.exports.register = function register(registry, context = {}) {
@@ -9,16 +10,6 @@ module.exports.register = function register(registry, context = {}) {
 <script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2" charset="utf-8"></script>
 <script src="https://cdn.jsdelivr.net/npm/d3@7" charset="utf-8"></script>
 `
-    })
-  })
-  registry.treeProcessor(function () {
-    const self = this
-    self.process(function (doc) {
-      const blocks = doc.findBy({role: 'plotly'})
-      if (blocks.length > 0) {
-        doc.setAttribute('page-plotly', '')
-      }
-      return doc
     })
   })
   registry.block('plotly', function () {

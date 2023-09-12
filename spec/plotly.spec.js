@@ -2,7 +2,7 @@
 const chai = require('chai')
 const expect = chai.expect
 
-const plotlyExt = require('../src/plotly.js')
+const plotlyExt = require('../src/plotly-block-extension.js')
 const asciidoctor = require('@asciidoctor/core')()
 
 describe('Plotly', () => {
@@ -51,7 +51,6 @@ const layout = {
       const registry = asciidoctor.Extensions.create()
       plotlyExt.register(registry)
       const doc = asciidoctor.load(input, {extension_registry: registry})
-      expect(doc.getAttribute('page-plotly')).to.equal('')
       const html = doc.convert()
       expect(html).to.equal(`<div id="test-1"></div>
 <script>

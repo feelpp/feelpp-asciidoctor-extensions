@@ -1,8 +1,9 @@
 {
-  "name": "feelpp-asciidoctor-extensions",
+  "name": "@feelpp/asciidoctor-extensions",
+  "private": false,
   "version": "1.0.0",
-  "description": "",
-  "main": "src/plotly.js",
+  "description": "Asciidoctor Extensions by Feel++.",
+  "main": "src/index.js",
   "scripts": {
     "test": "mocha spec"
   },
@@ -20,6 +21,8 @@
   "devDependencies": {
     "@asciidoctor/core": "~2.2",
     "chai": "~4.3",
-    "mocha": "~10.2"
+    "libnpmpublish": "^4.0.2",
+    "mocha": "~10.2",
+    "pacote": "^12.0.2"
   }
 }
