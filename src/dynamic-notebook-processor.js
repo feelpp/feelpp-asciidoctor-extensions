@@ -36,6 +36,13 @@ sys.stderr.write(json.dumps(results))
 `
 }
 
+class ExecutionError extends Error {
+  constructor(message) {
+    super(message)
+    this.name = "ExecutionError"
+  }
+}
+
 /**
  * Executes Python code blocks that have the "dynamic" option.
  * The code blocks are executed in the order of their definition in the AsciiDoc document.
@@ -87,10 +94,19 @@ sys.stdout.write(plotter.export_html(None).getvalue())`)
               const parent = block.getParent()
               const parentBlocks = parent.getBlocks()
               const blockIndex = parentBlocks['$find_index'](block) + 1
-              const exampleBlock = self.createExampleBlock(block, '', {'collapsible-option': ''}, {'content_model': 'compound'})
+              const opts = Object.fromEntries(Object.entries(block.getAttributes()).filter(([key, _]) => key.endsWith('-option')))
+              const attrs = {
+                ...opts,
+                'collapsible-option': ''
+              }
+              const exampleBlock = self.createExampleBlock(block, '', attrs, {'content_model': 'compound'})
               exampleBlock.setTitle('Results')
               // option for raw content (Plotly)
-              let source = response[index].stdout.toString('utf8')
+              const result = response[index]
+              let source = result.stdout.toString('utf8')
+              if (result.success === false && block.hasAttribute("fail-on-error")) {
+                throw new ExecutionError(result.stderr.toString('utf8') + " " + result.stdout.toString('utf8'))
+              }
               if (block.isOption('raw')) {
                 if (block.getAttribute('output') === 'pyvista') {
                   logger.debug(source)
@@ -119,7 +135,13 @@ ${script}`, {role: 'dynamic-py-result'}))
               }
               parentBlocks.splice(blockIndex, 0, exampleBlock)
             } catch (err) {
-              logger.error({ err })
+              if (err instanceof ExecutionError) {
+                throw err
+              } else {
+                const errorMessage = { err }
+                errorMessage['$inspect'] = () => err.toString()
+                logger.error(errorMessage)
+              }
             }
           }
         }
