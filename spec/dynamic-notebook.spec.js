@@ -18,7 +18,7 @@ print('hello')
 `
       const registry = asciidoctor.Extensions.create()
       dynamicNotebookExt.register(registry)
-      const doc = asciidoctor.load(input, {extension_registry: registry})
+      const doc = asciidoctor.load(input, { extension_registry: registry })
       const html = doc.convert()
       expect(html).to.equal(`<div class="listingblock">
 <div class="content">
@@ -48,7 +48,7 @@ invalid_python
       const registry = asciidoctor.Extensions.create()
       dynamicNotebookExt.register(registry)
       try {
-        const doc = asciidoctor.load(input, {extension_registry: registry})
+        const doc = asciidoctor.load(input, { extension_registry: registry })
         expect.fail('Should throw an error when fail-on-error attribute is define')
       } catch (err) {
         // OK
@@ -65,7 +65,7 @@ invalid_python
 `
       const registry = asciidoctor.Extensions.create()
       dynamicNotebookExt.register(registry)
-      const doc = asciidoctor.load(input, {extension_registry: registry})
+      const doc = asciidoctor.load(input, { extension_registry: registry })
       const html = doc.convert()
       expect(html).to.equal(`<div class="listingblock">
 <div class="content">
@@ -87,6 +87,43 @@ NameError: name 'invalid_python' is not defined</pre>
 </div>
 </div>
 </details>`)
+    })
+    it('should output more than one Plotly charts', () => {
+      const input = `
+:dynamic-blocks:
+
+[%dynamic%raw,python]
+----
+import plotly.express as px
+
+figs = []
+figs.append(px.line(px.data.gapminder().query("country=='Canada'"), x="year", y="lifeExp", title='Life expectancy in Canada'))
+figs.append(px.line(px.data.gapminder().query("continent=='Oceania'"), x="year", y="lifeExp", color='country'))
+
+for fig in figs:
+  fig.show()
+----
+`
+      const registry = asciidoctor.Extensions.create()
+      dynamicNotebookExt.register(registry)
+      const doc = asciidoctor.load(input, { extension_registry: registry })
+      const html = doc.convert()
+      expect(html).to.contains(`<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-python" data-lang="python">import plotly.express as px
+
+figs = []
+figs.append(px.line(px.data.gapminder().query("country=='Canada'"), x="year", y="lifeExp", title='Life expectancy in Canada'))
+figs.append(px.line(px.data.gapminder().query("continent=='Oceania'"), x="year", y="lifeExp", color='country'))
+
+for fig in figs:
+  fig.show()</code></pre>
+</div>
+</div>
+<details class="dynamic-py-result dynamic-py-result-plotly dynamic-py-result-plotly-grid">
+<summary class="title">Results</summary>`)
+      const blocksCount = Array.from(html.matchAll(/<div id="[^"]+" class="plotly-graph-div" .*<\/script>/gm), (m) => m[0]).length
+      expect(blocksCount).to.eq(2)
     })
   })
 })

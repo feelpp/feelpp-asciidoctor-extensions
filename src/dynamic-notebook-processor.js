@@ -7,6 +7,7 @@ const plotterShowRx = /plotter.show\(\)/g
 const pyvistaContainerRx = /^var container = document\.querySelector\('.content'\);$/m
 const pyvistaScriptRx = /(?<script><script .*<\/script>)/ms
 const pyvistaFaviconRx = /n\.setAttribute\("href","https:\/\/kitware.github.io\/vtk-js\/icon\/favicon-".concat\(t,"x"\).concat\(t,".png"\)\),/
+const plotlyPlotRx = /<div id="[^"]+" class="plotly-graph-div" .*<\/script>/gm
 
 const ipythonTemplate = (pyCodes) => {
   return `from IPython.core.interactiveshell import InteractiveShell
@@ -72,10 +73,8 @@ module.exports.register = function register(registry) {
         const ipython = ipythonTemplate(blocks.map((b) => {
           const code = b.getContent()
             .replaceAll(conumRx, '')
-            .replaceAll(figShowRx, `import sys
-fig.write_html(file=sys.stdout, include_plotlyjs=False)`)
-            .replaceAll(plotterShowRx, `import sys
-sys.stdout.write(plotter.export_html(None).getvalue())`)
+            .replaceAll(figShowRx, `import sys; fig.write_html(file=sys.stdout, include_plotlyjs=False)`)
+            .replaceAll(plotterShowRx, `import sys; sys.stdout.write(plotter.export_html(None).getvalue())`)
           return JSON.stringify(code)
         }))
         logger.info('processing dynamic blocks...')
@@ -101,12 +100,12 @@ sys.stdout.write(plotter.export_html(None).getvalue())`)
               }
               const exampleBlock = self.createExampleBlock(block, '', attrs, {'content_model': 'compound'})
               exampleBlock.setTitle('Results')
-              // option for raw content (Plotly)
               const result = response[index]
               let source = result.stdout.toString('utf8')
               if (result.success === false && block.hasAttribute("fail-on-error")) {
                 throw new ExecutionError(result.stderr.toString('utf8') + " " + result.stdout.toString('utf8'))
               }
+              // option for raw content (Plotly or PyVista)
               if (block.isOption('raw')) {
                 if (block.getAttribute('output') === 'pyvista') {
                   logger.debug(source)
@@ -128,7 +127,21 @@ resizeObserver.observe(document.getElementById('pyvista-${index}'))
 ${script}`, {role: 'dynamic-py-result'}))
                   }
                 } else {
-                  exampleBlock.append(self.createPassBlock(exampleBlock, source, {role: 'dynamic-py-result'}))
+                  exampleBlock.addRole('dynamic-py-result')
+                  let content = ''
+                  const plotlyBlocks = Array.from(source.matchAll(plotlyPlotRx), (m) => m[0])
+                  console.log(plotlyBlocks)
+                  console.log(source)
+                  if (plotlyBlocks) {
+                    exampleBlock.addRole('dynamic-py-result-plotly')
+                    if (plotlyBlocks.length > 1) {
+                      exampleBlock.addRole('dynamic-py-result-plotly-grid')
+                    }
+                    content = plotlyBlocks.join('\n')
+                  } else {
+                    content = source
+                  }
+                  exampleBlock.append(self.createPassBlock(exampleBlock, content))
                 }
               } else {
                 exampleBlock.append(self.createLiteralBlock(exampleBlock, source, {role: 'dynamic-py-result'}))
