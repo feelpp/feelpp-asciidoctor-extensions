@@ -108,7 +108,6 @@ for fig in figs:
       dynamicNotebookExt.register(registry)
       const doc = asciidoctor.load(input, { extension_registry: registry })
       const html = doc.convert()
-      console.log(html)
       expect(html).to.contains(`<div class="listingblock">
 <div class="content">
 <pre class="highlight"><code class="language-python" data-lang="python">import plotly.express as px

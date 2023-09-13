@@ -130,6 +130,8 @@ ${script}`, {role: 'dynamic-py-result'}))
                   exampleBlock.addRole('dynamic-py-result')
                   let content = ''
                   const plotlyBlocks = Array.from(source.matchAll(plotlyPlotRx), (m) => m[0])
+                  console.log(plotlyBlocks)
+                  console.log(source)
                   if (plotlyBlocks) {
                     exampleBlock.addRole('dynamic-py-result-plotly')
                     if (plotlyBlocks.length > 1) {
