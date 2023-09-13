@@ -73,7 +73,7 @@ module.exports.register = function register(registry) {
   registry.treeProcessor(function () {
     const self = this
     self.process(function (doc) {
-      const blocks = doc.findBy({context: 'listing', style: 'source'})
+      const blocks = doc.findBy({ context: 'listing', style: 'source' })
         .filter((b) => b.getAttribute('language') === 'python' && b.isOption('dynamic'))
       if (blocks && blocks.length > 0 && doc.getAttribute('dynamic-blocks') !== undefined) {
         const ipython = ipythonTemplate(blocks.map((b) => {
@@ -83,7 +83,7 @@ module.exports.register = function register(registry) {
             .replaceAll(plotterShowRx, `import sys; sys.stdout.write(plotter.export_html(None).getvalue())`)
           return JSON.stringify(code)
         }))
-        logger.info('processing dynamic blocks...')
+        logger.info('Processing dynamic blocks...')
         const result = child_process.spawnSync('python3', ['-'], {
           shell: false,
           input: ipython,
@@ -91,46 +91,50 @@ module.exports.register = function register(registry) {
           maxBuffer: 1024 * 1024 * 50
         })
         if (result.status !== 0) {
-          // something went wrong!
-        } else {
-          const response = JSON.parse(result.stderr.toString('utf8'))
-          for (const [index, block] of blocks.entries()) {
-            try {
-              const parent = block.getParent()
-              const parentBlocks = parent.getBlocks()
-              const blockIndex = parentBlocks['$find_index'](block) + 1
-              const opts = Object.fromEntries(Object.entries(block.getAttributes()).filter(([key, _]) => key.endsWith('-option')))
-              const attrs = {
-                ...opts,
-                'collapsible-option': ''
+          throw new ExecutionError(`Unable to execute python3! status: ${result.status}, stdout: ${result.stdout}, stderr: ${result.stderr}`)
+        }
+        const response = JSON.parse(result.stderr.toString('utf8'))
+        for (const [index, block] of blocks.entries()) {
+          try {
+            const parent = block.getParent()
+            const parentBlocks = parent.getBlocks()
+            const blockIndex = parentBlocks['$find_index'](block) + 1
+            const opts = Object.fromEntries(Object.entries(block.getAttributes()).filter(([key, _]) => key.endsWith('-option')))
+            const attrs = {
+              ...opts,
+              'collapsible-option': ''
+            }
+            const exampleBlock = self.createExampleBlock(block, '', attrs, { 'content_model': 'compound' })
+            exampleBlock.setTitle('Results')
+            const result = response[index]
+            let cacheResultDir = doc.getAttribute('dynamic-blocks-cache-result')
+            if (cacheResultDir !== undefined) {
+              if (cacheResultDir === '') {
+                cacheResultDir = '.cache'
               }
-              const exampleBlock = self.createExampleBlock(block, '', attrs, {'content_model': 'compound'})
-              exampleBlock.setTitle('Results')
-              const result = response[index]
-              let cacheResultDir = doc.getAttribute('dynamic-blocks-cache-result')
-              if (cacheResultDir !== undefined) {
-                if (cacheResultDir === '') {
-                  cacheResultDir = '.cache'
-                }
-                if (!fs.existsSync(cacheResultDir)) {
-                  fs.mkdirSync(cacheResultDir, { recursive: true })
-                }
-                fs.writeFileSync(ospath.join(cacheResultDir, `${result.id}.json`), JSON.stringify(result), 'utf8')
+              if (!fs.existsSync(cacheResultDir)) {
+                fs.mkdirSync(cacheResultDir, { recursive: true })
               }
-              let source = result.stdout.toString('utf8')
-              if (result.success === false && block.hasAttribute("fail-on-error")) {
+              fs.writeFileSync(ospath.join(cacheResultDir, `${result.id}.json`), JSON.stringify(result), 'utf8')
+            }
+            let source = result.stdout.toString('utf8')
+            if (result.success === false) {
+              if (block.hasAttribute("fail-on-error")) {
+                // noinspection ExceptionCaughtLocallyJS
                 throw new ExecutionError(result.stderr.toString('utf8') + " " + result.stdout.toString('utf8'))
+              } else {
+                logger.warn(`Execution is unsuccessful! ${source}`)
               }
-              // option for raw content (Plotly or PyVista)
-              if (block.isOption('raw')) {
-                if (block.getAttribute('output') === 'pyvista') {
-                  logger.debug(source)
-                  source = source.replace(pyvistaContainerRx, `var container = document.getElementById('pyvista-${index}')`)
-                  source = source.replace(pyvistaFaviconRx, '')
-                  const found = source.match(pyvistaScriptRx)
-                  if (found) {
-                    const script = found.groups['script']
-                    exampleBlock.append(self.createPassBlock(exampleBlock, `<div id="pyvista-${index}" style="position: relative; height: 500px; border: 1px solid #cecece;"></div>
+            }
+            // option for raw content (Plotly or PyVista)
+            if (block.isOption('raw')) {
+              if (block.getAttribute('output') === 'pyvista') {
+                source = source.replace(pyvistaContainerRx, `var container = document.getElementById('pyvista-${index}')`)
+                source = source.replace(pyvistaFaviconRx, '')
+                const found = source.match(pyvistaScriptRx)
+                if (found) {
+                  const script = found.groups['script']
+                  exampleBlock.append(self.createPassBlock(exampleBlock, `<div id="pyvista-${index}" style="position: relative; height: 500px; border: 1px solid #cecece;"></div>
 <script>
 const resizeObserver = new ResizeObserver((entries) => {
   for (const entry of entries) {
@@ -140,37 +144,34 @@ const resizeObserver = new ResizeObserver((entries) => {
 })
 resizeObserver.observe(document.getElementById('pyvista-${index}'))
 </script>
-${script}`, {role: 'dynamic-py-result'}))
-                  }
-                } else {
-                  exampleBlock.addRole('dynamic-py-result')
-                  let content = ''
-                  const plotlyBlocks = Array.from(source.matchAll(plotlyPlotRx), (m) => m[0])
-                  console.log(plotlyBlocks)
-                  console.log(source)
-                  if (plotlyBlocks) {
-                    exampleBlock.addRole('dynamic-py-result-plotly')
-                    if (plotlyBlocks.length > 1) {
-                      exampleBlock.addRole('dynamic-py-result-plotly-grid')
-                    }
-                    content = plotlyBlocks.join('\n')
-                  } else {
-                    content = source
-                  }
-                  exampleBlock.append(self.createPassBlock(exampleBlock, content))
+${script}`, { role: 'dynamic-py-result' }))
                 }
               } else {
-                exampleBlock.append(self.createLiteralBlock(exampleBlock, source, {role: 'dynamic-py-result'}))
+                exampleBlock.addRole('dynamic-py-result')
+                let content = ''
+                const plotlyBlocks = Array.from(source.matchAll(plotlyPlotRx), (m) => m[0])
+                if (plotlyBlocks) {
+                  exampleBlock.addRole('dynamic-py-result-plotly')
+                  if (plotlyBlocks.length > 1) {
+                    exampleBlock.addRole('dynamic-py-result-plotly-grid')
+                  }
+                  content = plotlyBlocks.join('\n')
+                } else {
+                  content = source
+                }
+                exampleBlock.append(self.createPassBlock(exampleBlock, content))
               }
-              parentBlocks.splice(blockIndex, 0, exampleBlock)
-            } catch (err) {
-              if (err instanceof ExecutionError) {
-                throw err
-              } else {
-                const errorMessage = { err }
-                errorMessage['$inspect'] = () => err.toString()
-                logger.error(errorMessage)
-              }
+            } else {
+              exampleBlock.append(self.createLiteralBlock(exampleBlock, source, { role: 'dynamic-py-result' }))
+            }
+            parentBlocks.splice(blockIndex, 0, exampleBlock)
+          } catch (err) {
+            if (err instanceof ExecutionError) {
+              throw err
+            } else {
+              const errorMessage = { err }
+              errorMessage['$inspect'] = () => err.toString()
+              logger.error(errorMessage)
             }
           }
         }
