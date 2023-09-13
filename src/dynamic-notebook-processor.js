@@ -1,5 +1,7 @@
 /* global Opal */
 const child_process = require('node:child_process')
+const fs = require('node:fs')
+const ospath = require('node:path')
 
 const conumRx = /\s*<i class="conum" data-value="[0-9]+"><\/i><b>[^>]+<\/b>/g
 const figShowRx = /fig.show\(\)/g
@@ -14,6 +16,7 @@ const ipythonTemplate = (pyCodes) => {
 from IPython.utils.capture import capture_output
 import json
 import sys
+import hashlib
 
 shell = InteractiveShell()
 results = []
@@ -24,10 +27,13 @@ ${pyCodes.map((pyCode, index) => {
     return `
 with capture_output() as io${index}:
     r${index} = shell.run_cell(${pyCode})
+    md5sum = hashlib.md5(${pyCode}.encode('utf8')).hexdigest()
     results.append({
         'success': r${index}.success,
         'stderr': io${index}.stderr,
-        'stdout': io${index}.stdout
+        'stdout': io${index}.stdout,
+        'id': f"{md5sum}-${index}",
+        'code': ${pyCode}
     })
 
 `
@@ -101,6 +107,16 @@ module.exports.register = function register(registry) {
               const exampleBlock = self.createExampleBlock(block, '', attrs, {'content_model': 'compound'})
               exampleBlock.setTitle('Results')
               const result = response[index]
+              let cacheResultDir = doc.getAttribute('dynamic-blocks-cache-result')
+              if (cacheResultDir !== undefined) {
+                if (cacheResultDir === '') {
+                  cacheResultDir = '.cache'
+                }
+                if (!fs.existsSync(cacheResultDir)) {
+                  fs.mkdirSync(cacheResultDir, { recursive: true })
+                }
+                fs.writeFileSync(ospath.join(cacheResultDir, `${result.id}.json`), JSON.stringify(result), 'utf8')
+              }
               let source = result.stdout.toString('utf8')
               if (result.success === false && block.hasAttribute("fail-on-error")) {
                 throw new ExecutionError(result.stderr.toString('utf8') + " " + result.stdout.toString('utf8'))

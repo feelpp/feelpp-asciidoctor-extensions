@@ -1,4 +1,6 @@
 /* global describe it */
+const fsp = require('node:fs/promises')
+const ospath = require('node:path')
 const chai = require('chai')
 const expect = chai.expect
 
@@ -87,6 +89,38 @@ NameError: name 'invalid_python' is not defined</pre>
 </div>
 </div>
 </details>`)
+    })
+    it('should write execution result when :dynamic-blocks-cache-result: is defined', async () => {
+      const input = `
+:dynamic-blocks:
+:dynamic-blocks-cache-result:
+
+[%dynamic,python]
+----
+print('hello')
+----
+`
+      const registry = asciidoctor.Extensions.create()
+      dynamicNotebookExt.register(registry)
+      const doc = asciidoctor.load(input, {extension_registry: registry})
+      const html = doc.convert()
+      expect(html).to.equal(`<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-python" data-lang="python">print('hello')</code></pre>
+</div>
+</div>
+<details>
+<summary class="title">Results</summary>
+<div class="content">
+<div class="literalblock dynamic-py-result">
+<div class="content">
+<pre>hello</pre>
+</div>
+</div>
+</div>
+</details>`)
+      const executionResultData = await fsp.readFile(ospath.join(__dirname, '..', '.cache', 'e73b48e8e00d36304ea7204a0683c814-0.json'), 'utf8')
+      expect(executionResultData).to.equal(`{"success":true,"stderr":"","stdout":"hello\\n","id":"e73b48e8e00d36304ea7204a0683c814-0","code":"print('hello')"}`)
     })
     it('should output more than one Plotly charts', () => {
       const input = `
