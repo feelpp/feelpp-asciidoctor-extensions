@@ -3,7 +3,8 @@ const child_process = require('node:child_process')
 const fs = require('node:fs')
 const ospath = require('node:path')
 
-const conumRx = /\s*<i class="conum" data-value="[0-9]+"><\/i><b>[^>]+<\/b>/g
+//const conumRx = /\s*<i class="conum" data-value="[0-9]+"><\/i><b>[^>]+<\/b>/g
+const calloutRx = /\s+<(?:[0-9]+|\.)>/g
 const figShowRx = /fig.show\(\)/g
 const plotterShowRx = /plotter.show\(\)/g
 const pyvistaContainerRx = /^var container = document\.querySelector\('.content'\);$/m
@@ -77,8 +78,8 @@ module.exports.register = function register(registry) {
         .filter((b) => b.getAttribute('language') === 'python' && b.isOption('dynamic'))
       if (blocks && blocks.length > 0 && doc.getAttribute('dynamic-blocks') !== undefined) {
         const ipython = ipythonTemplate(blocks.map((b) => {
-          const code = b.getContent()
-            .replaceAll(conumRx, '')
+          const code = b.getSourceLines().join('\n')
+            .replaceAll(calloutRx, '')
             .replaceAll(figShowRx, `import sys; fig.write_html(file=sys.stdout, include_plotlyjs=False)`)
             .replaceAll(plotterShowRx, `import sys; sys.stdout.write(plotter.export_html(None).getvalue())`)
           return JSON.stringify(code)
