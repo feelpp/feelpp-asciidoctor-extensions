@@ -1,7 +1,7 @@
 {
   "name": "@feelpp/asciidoctor-extensions",
   "private": false,
-  "version": "1.0.0-rc.9",
+  "version": "1.0.0-rc.10",
   "description": "Asciidoctor Extensions by Feel++.",
   "main": "src/index.js",
   "scripts": {
@@ -13,7 +13,11 @@
   },
   "keywords": [],
   "author": "Guillaume Grossetie <ggrossetie@yuzutech.fr>",
-  "contributors" : [ "Christophe Prud'homme <christophe.prudhomme@cemosis.fr>" ],
+  "contributors" : [ 
+    "Christophe Prud'homme <christophe.prudhomme@cemosis.fr>",
+    "Javier Cladellas <javier.cladellas@cemosis.fr>",
+    "Vincent Chabannes <vincent.chabannes@cemosis.fr>"
+  ],
   "license": "MIT",
   "bugs": {
     "url": "https://github.com/feelpp/feelpp-asciidoctor-extensions/issues"
