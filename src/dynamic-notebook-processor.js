@@ -107,6 +107,24 @@ module.exports.register = function register(registry) {
             }
             const exampleBlock = self.createExampleBlock(block, '', attrs, { 'content_model': 'compound' })
             exampleBlock.setTitle('Results')
+
+            //Hide code option (hide only the cell code)
+            if (block.isOption('hide_code')) {
+              exampleBlock.setTitle('')
+              block.addRole('hide')
+            }
+
+            // //Open option (automatically open the cell results)
+            // if (block.isOption('open')){
+            //   exampleBlock.addRole('open')
+            // }
+
+            //Hide output option (hide the cell results)
+            if (block.isOption('hide_output')) {
+              exampleBlock.setTitle('')
+              exampleBlock.addRole('hide')
+            }
+
             const result = response[index]
             let cacheResultDir = doc.getAttribute('dynamic-blocks-cache-result')
             if (cacheResultDir !== undefined) {
