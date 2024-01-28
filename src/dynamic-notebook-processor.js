@@ -114,10 +114,10 @@ module.exports.register = function register(registry) {
               block.addRole('hide')
             }
 
-            //Open option (automatically open the cell results)
-            if (block.isOption('open')){
-              exampleBlock.addRole('open')
-            }
+            // //Open option (automatically open the cell results)
+            // if (block.isOption('open')){
+            //   exampleBlock.addRole('open')
+            // }
 
             //Hide output option (hide the cell results)
             if (block.isOption('hide_output')) {
