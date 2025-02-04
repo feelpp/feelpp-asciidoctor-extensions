@@ -41,6 +41,209 @@ function escapeAsciidoc(input) {
     return input.replace(/[*_#<>]/g, match => replacements[match] || match);
 }
 
+
+function setup(block, adocbasefname) {
+    // console.log("Extracted Attributes:", block.getAttributes());
+    const attribute = block.getAttribute('language');
+    const code = block.getSource();
+
+    // Use filename from attribute or fallback to a timestamped name
+    const filename = block.getAttribute('filename', `tmp_${Date.now()}.${attribute}`);
+    let sourceDirPath = path.join('cpp', adocbasefname);
+    fs.mkdirSync(sourceDirPath, { recursive: true });
+    const tmpFilePath = path.join(sourceDirPath, filename);
+    let exeFilename = '';
+    let languageName = '';
+    if (attribute === 'cpp') {
+        exeFilename = filename.replace(/\.cpp$/, '.exe');
+        languageName = "C++";
+    }
+    else if (attribute === 'c') {
+        exeFilename = filename.replace(/\.c$/, '.exe');
+        languageName = "C";
+    }
+    else {
+        throw new Error(`Unsupported language: ${attribute}`);
+    }
+    const tmpExePath = path.join(sourceDirPath, `${exeFilename}`);
+    console.log(`Writing ${languageName} code to ${tmpFilePath}`);
+    const wrappedCode = wrapCode(code, filename);
+    fs.writeFileSync(tmpFilePath, wrappedCode);
+
+    return [sourceDirPath, tmpFilePath, languageName, tmpExePath]
+}
+
+
+function compileCPP(sourceDirPath, baseSourceFilePath, baseExePath) {
+    let compileCommand = `g++ -std=c++17 ${baseSourceFilePath} -o ${baseExePath}`;
+
+    let compileResult = child_process.spawnSync('g++', ['-std=c++17', baseSourceFilePath, '-o', baseExePath], { cwd: sourceDirPath, shell: true });
+    if (compileResult.error || compileResult.status !== 0) {
+        throw new CompilationError(["[sh] compilation error: >>", compileResult.stderr.toString(), "<< ", sourceDirPath, " ", baseExePath ]);
+    }
+
+    return [compileCommand, compileResult.stdout.toString('utf8')];
+}
+
+function compileMake(sourceDirPath, baseExePath) {
+    let compileCommand = `make ${baseExePath}`;
+
+    let compileResult = child_process.spawnSync('make', [baseExePath], { cwd: sourceDirPath, shell: true });
+    if (compileResult.error || compileResult.status !== 0) {
+        throw new CompilationError(["[make] compilation error: ",  sourceDirPath, " ", baseExePath ]);
+    }
+    return [compileCommand, compileResult.stdout.toString('utf8')];
+
+}
+
+function compileMPI(sourceDirPath, baseSourceFilePath, baseExePath) {
+    let compileCommand = `mpicxx ${baseSourceFilePath} -o ${baseExePath}`;
+
+    let compileResult = child_process.spawnSync('mpicxx', [baseSourceFilePath, '-o', baseExePath], { cwd: sourceDirPath, shell: true });
+    if (compileResult.error || compileResult.status !== 0) {
+        throw new CompilationError(["[mpi] compilation error: ", compileResult.error, compileResult.stderr.toString(), " ", sourceDirPath, " ", baseExePath ]);
+    }
+    return [compileCommand, compileResult.stdout.toString('utf8')];
+}
+
+function compileCode(blockCommand, sourceDirPath, filePath, exePath) {
+    let baseSourceFilePath = path.basename(filePath);
+    let baseExePath = path.basename(exePath);
+
+    let compileCommand = '';
+    let compileResultStdout = '';
+
+    if (blockCommand === 'sh' || blockCommand === 'cpp') {
+        [compileCommand, compileResultStdout] = compileCPP(sourceDirPath, baseSourceFilePath, baseExePath);
+    }
+    else if (blockCommand === 'mpi') {
+        [compileCommand, compileResultStdout] = compileMPI(sourceDirPath, baseSourceFilePath, baseExePath);
+    }
+    else if (blockCommand === 'make') {
+        [compileCommand, compileResultStdout] = compileMake(sourceDirPath, baseExePath);
+    }
+
+    return [compileCommand, compileResultStdout];
+}
+
+
+function embedCompilationCommand(self, block, compileCommand, compileResultStdout){
+    let compileDisplayLine = `$ ${compileCommand}`;
+    // console.log(`compileDisplayLine: ${compileDisplayLine}`);
+    const compileExampleBlock = self.createExampleBlock(block, '', [], { 'content_model': 'compound', 'context': 'sidecar examp' })
+    compileExampleBlock.setTitle('Compilation Command Line')
+    const compileBlock = self.createLiteralBlock(block, compileDisplayLine, { role: 'compile-command' });
+    compileExampleBlock.append(compileBlock);
+
+    if ( compileResultStdout ) {
+        const opts = Object.fromEntries(Object.entries(block.getAttributes()).filter(([key, _]) => key.endsWith('-option')))
+        // Embed result in document
+        const attrs = {
+            ...opts,
+            'style': 'source',
+            'language': 'sh',
+            'collapsible-option': ''
+        };
+        if (block.isOption('open')) {
+            attrs['folded-option'] = '';
+
+        }
+
+        const compileResultBlock = self.createExampleBlock(block, '', attrs, { 'content_model': 'compound' })
+        compileResultBlock.setTitle('Results')
+        compileResultBlock.append(self.createLiteralBlock(compileResultBlock, compileResultStdout, { role: 'dynamic-cpp-result' }));
+        compileExampleBlock.append(compileResultBlock);
+    }
+
+    return compileExampleBlock;
+}
+
+
+function embedExecutionResult(self, block, blockCommand, filePath, exePath){
+    let baseExePath = path.basename(exePath);
+
+    // Extract inputs from the 'inputs' attribute
+    const blockInputs = block.getAttribute('inputs', '').replace(/\\n/g, '\n');
+    // Extract options from the 'opts' attribute
+    let argSets = block.getAttribute('args', '').split(argSetsDelimiter).map(s => s.trim());
+    for (const args of argSets) {
+
+        // Extract options from the 'opts' attribute
+        let exeOptions = args.split(/\s+/);
+
+        // console.log(`exeOptions: ${exeOptions}`);
+
+        // Execute compiled code
+        if (!fs.existsSync(path.join(path.dirname(filePath), baseExePath))) {
+            throw new Error(`Expected compiled executable not found at: ${path.join(path.dirname(filePath), baseExePath)}`);
+        }
+        //let executionResult = child_process.spawnSync(tmpExePath);
+
+        let execPrefix = '';
+        if (blockCommand === 'mpi') {
+            let np = block.getAttribute('np', '2');
+            execPrefix = `mpirun -np ${np} `;
+        }
+        let executionCmdLine = `${execPrefix}./${baseExePath}`
+        let executionResult = child_process.spawnSync(executionCmdLine, exeOptions, {
+            cwd: path.dirname(filePath),
+            shell: true,
+            input: blockInputs // pass the inputs to the executed program
+        });
+        if (executionResult.error) {
+            throw new Error( ["execution error", executionResult.error] );
+        }
+
+        let executionDisplayLine = `$ ${executionCmdLine} ${args}`;
+        if (blockInputs) {
+            executionDisplayLine += `\n${blockInputs}`;
+        }
+        const execExampleBlock = self.createExampleBlock(block, '', [], { 'content_model': 'compound', 'context': 'sidecar' })
+        execExampleBlock.setTitle('Execution Command Line')
+        if (args) {
+            execExampleBlock.setTitle(`Execution Command Line with arguments \`${args}\``)
+        }
+        const executionCmdBlock = self.createLiteralBlock(block, executionDisplayLine, { role: 'execution-command' });
+        execExampleBlock.append(executionCmdBlock);
+
+
+        const opts = Object.fromEntries(Object.entries(block.getAttributes()).filter(([key, _]) => key.endsWith('-option')))
+        // Embed result in document
+        const attrs = {
+            ...opts,
+            'style': 'source',
+            'language': 'sh',
+            'collapsible-option': ''
+        };
+        if (block.isOption('open')) {
+            attrs['folded-option'] = '';
+
+        }
+
+        let stdoutContent = escapeAsciidoc(executionResult.stdout.toString('utf8'));
+        console.log(`stdoutContent: ${stdoutContent}`);
+        let stderrContent = escapeAsciidoc(executionResult.stderr.toString('utf8'));
+
+        const exampleBlock = self.createExampleBlock(block, '', attrs, { 'content_model': 'compound' })
+        //const exampleBlock = self.createExampleBlock(block, executionResult.stdout.toString('utf8'), [], attrs);
+        exampleBlock.setTitle('Results')
+        if ( args ) {
+            exampleBlock.setTitle(`Results`)
+        }
+        exampleBlock.append(self.createLiteralBlock(exampleBlock, stdoutContent, { role: 'dynamic-cpp-result' }));
+
+        if (stderrContent) {
+            const stderrBlock = self.createLiteralBlock(exampleBlock, stderrContent, { role: 'dynamic-cpp-result-error' });
+            exampleBlock.append(stderrBlock);
+        }
+        execExampleBlock.append(exampleBlock);
+
+        return execExampleBlock;
+    } // for loop on argset
+}
+
+
+
 module.exports.register = function register(registry) {
     const logger = Opal.Asciidoctor.LoggerManager.getLogger();
 
@@ -48,169 +251,49 @@ module.exports.register = function register(registry) {
         const self = this;
         self.process(function (doc) {
             const blocks = doc.findBy({ context: 'listing', style: 'source' })
-                .filter((b) => b.getAttribute('language') === 'cpp' && b.isOption('dynamic'));
+                .filter((b) => (b.getAttribute('language') === 'cpp' || b.getAttribute('language') === 'c') && b.isOption('dynamic'));
 
             if (blocks && blocks.length > 0) {
                 for (const block of blocks) {
+                    const adocbasefname = path.parse( doc.getAttribute('docfile') ).name;
+                    const parent = block.getParent()
+                    const parentBlocks = parent.getBlocks()
+                    const blockIndex = parentBlocks['$find_index'](block) + 1
+
+                    let [sourceDirPath, tmpFilePath, languageName, tmpExePath] = setup(block, adocbasefname);
+
                     try {
-                        console.log("Extracted Attributes:", block.getAttributes());
-
-                        const adocbasefname = path.parse( doc.getAttribute('docfile') ).name;
-                        const parent = block.getParent()
-                        const parentBlocks = parent.getBlocks()
-                        const blockIndex = parentBlocks['$find_index'](block) + 1
-                        const code = block.getSource();
-
-                        // Use filename from attribute or fallback to a timestamped name
-                        const filename = block.getAttribute('filename', `tmp_${Date.now()}.cpp`);
-                        let cppDirPath = path.join('cpp', adocbasefname);
-                        fs.mkdirSync(cppDirPath, { recursive: true });
-                        const tmpFilePath = path.join(cppDirPath, filename);
-                        let exeFilename = filename.replace(/\.cpp$/, '.exe');
-                        const tmpExePath = path.join(cppDirPath, `${exeFilename}`);
-                        console.log(`Writing C++ code to ${tmpFilePath}`);
-                        const wrappedCode = wrapCode(code, filename);
-                        fs.writeFileSync(tmpFilePath, wrappedCode);
 
                         // Compile C++ code
                         const blockCommand = block.getAttribute('compile', 'make');
-                        if (blockCommand !== 'sh' && blockCommand !== 'make') {
+
+                        if (!['sh', 'make', 'mpi'].includes(blockCommand)) {
                             continue;
                         }
-                        let baseCppFilePath = path.basename(tmpFilePath);
-                        let baseExePath = path.basename(tmpExePath);
-                        let compileCommand = `g++ -std=c++17 ${baseCppFilePath} -o ${baseExePath}`;
-                        if (blockCommand === 'make') {
-                            compileCommand = `make ${baseExePath}`;
-                        }
-                        let compileResultStdout = '';
-                        if (blockCommand === 'sh') {
-                            let compileResult = child_process.spawnSync('g++', ['-std=c++17',baseCppFilePath, '-o', baseExePath], { cwd: path.dirname(tmpFilePath), shell: true });
-                            if (compileResult.error || compileResult.status !== 0) {
-                                throw new CompilationError(["[sh] compilation error: ", compileResult.stderr.toString(), " ", path.dirname(tmpFilePath), " ", baseExePath ]);
-                            }
-                            compileResultStdout = compileResult.stdout.toString('utf8');
-                        }
-                        else if (blockCommand === 'make') {
-                            let compileResult = child_process.spawnSync('make', [baseExePath], { cwd: path.dirname(tmpFilePath), shell: true });
-                            if (compileResult.error || compileResult.status !== 0) {
-                                throw new CompilationError(["[make] compilation error: ",  path.dirname(tmpFilePath), " ", baseExePath ]);
-                            }
-                            compileResultStdout = compileResult.stdout.toString('utf8');
-                        }
+                        let [compileCommand, compileResultStdout] = compileCode(blockCommand, sourceDirPath, tmpFilePath, tmpExePath);
 
-                        // Embed Compilation Command
-                        let compileDisplayLine = `$ ${compileCommand}`;
-                        const compileExampleBlock = self.createExampleBlock(block, '', [], { 'content_model': 'compound', 'context': 'sidecar examp' })
-                        compileExampleBlock.setTitle('Compilation Command Line')
-                        const compileBlock = self.createLiteralBlock(block, compileDisplayLine, { role: 'compile-command' });
-                        compileExampleBlock.append(compileBlock);
-                        
-
-                        console.log(`compileResultStdout: ${compileResultStdout}`);
-                        if ( compileResultStdout ) {
-                            const opts = Object.fromEntries(Object.entries(block.getAttributes()).filter(([key, _]) => key.endsWith('-option')))
-                            // Embed result in document
-                            const attrs = {
-                                ...opts,
-                                'style': 'source',
-                                'language': 'sh',
-                                'collapsible-option': ''
-                            };
-                            if (block.isOption('open')) {
-                                attrs['folded-option'] = '';
-
-                            }
-
-                            const compileResultBlock = self.createExampleBlock(block, '', attrs, { 'content_model': 'compound' })
-                            compileResultBlock.setTitle('Results')
-                            compileResultBlock.append(self.createLiteralBlock(compileResultBlock, compileResultStdout, { role: 'dynamic-cpp-result' }));
-                            compileExampleBlock.append(compileResultBlock);
-                        }   
+                        // Embed Compilation Command and result in document
+                        let compileExampleBlock = embedCompilationCommand(self, block, compileCommand, compileResultStdout);
                         parentBlocks.splice(blockIndex, 0, compileExampleBlock);
-                        
+
 
                         const blockRun = block.getAttribute('run', 'true')
                         if (blockRun === 'false') {
                             continue;
                         }
-                        // Extract inputs from the 'inputs' attribute
-                        const blockInputs = block.getAttribute('inputs', '').replace(/\\n/g, '\n');
-                        // Extract options from the 'opts' attribute
-                        let argSets = block.getAttribute('args', '').split(argSetsDelimiter).map(s => s.trim());
-                        for (const args of argSets) {
 
-                            // Extract options from the 'opts' attribute
-                            let exeOptions = args.split(/\s+/);
-                            
-                            console.log(`exeOptions: ${exeOptions}`);
+                        // Embed execution result in document
+                        let execExampleBlock = embedExecutionResult(self, block, blockCommand, tmpFilePath, tmpExePath);
+                        parentBlocks.splice(blockIndex + 1, 0, execExampleBlock);
 
-                            // Execute compiled code
-                            if (!fs.existsSync(path.join(path.dirname(tmpFilePath), baseExePath))) {
-                                throw new Error(`Expected compiled executable not found at: ${path.join(path.dirname(tmpFilePath), baseExePath)}`);
-                            }
-                            //let executionResult = child_process.spawnSync(tmpExePath);
-                            let executionCmdLine = `./${baseExePath}`
-                            let executionResult = child_process.spawnSync(executionCmdLine, exeOptions, { 
-                                cwd: path.dirname(tmpFilePath),
-                                shell: true,
-                                input: blockInputs // pass the inputs to the executed program
-                            });
-                            if (executionResult.error) {
-                                throw new Error( ["execution error", executionResult.error] );
-                            }
 
-                            let executionDisplayLine = `$ ${executionCmdLine} ${args}`;
-                            if (blockInputs) {
-                                executionDisplayLine += `\n${blockInputs}`;
-                            }
-                            const execExampleBlock = self.createExampleBlock(block, '', [], { 'content_model': 'compound', 'context': 'sidecar' })
-                            execExampleBlock.setTitle('Execution Command Line')
-                            if (args) {
-                                execExampleBlock.setTitle(`Execution Command Line with arguments \`${args}\``)
-                            }
-                            const executionCmdBlock = self.createLiteralBlock(block, executionDisplayLine, { role: 'execution-command' });
-                            execExampleBlock.append(executionCmdBlock);
-                            
-
-                            const opts = Object.fromEntries(Object.entries(block.getAttributes()).filter(([key, _]) => key.endsWith('-option')))
-                            // Embed result in document
-                            const attrs = {
-                                ...opts,
-                                'style': 'source',
-                                'language': 'sh',
-                                'collapsible-option': ''
-                            };
-                            if (block.isOption('open')) {
-                                attrs['folded-option'] = '';
-                                
-                            }
-
-                            let stdoutContent = escapeAsciidoc(executionResult.stdout.toString('utf8'));
-                            console.log(`stdoutContent: ${stdoutContent}`);
-                            let stderrContent = escapeAsciidoc(executionResult.stderr.toString('utf8'));
-
-                            const exampleBlock = self.createExampleBlock(block, '', attrs, { 'content_model': 'compound' })
-                            //const exampleBlock = self.createExampleBlock(block, executionResult.stdout.toString('utf8'), [], attrs);
-                            exampleBlock.setTitle('Results')
-                            if ( args ) {
-                                exampleBlock.setTitle(`Results`)
-                            }
-                            exampleBlock.append(self.createLiteralBlock(exampleBlock, stdoutContent, { role: 'dynamic-cpp-result' }));
-                        
-                            if (stderrContent) {
-                                const stderrBlock = self.createLiteralBlock(exampleBlock, stderrContent, { role: 'dynamic-cpp-result-error' });
-                                exampleBlock.append(stderrBlock);
-                            }
-                            execExampleBlock.append(exampleBlock);
-                            parentBlocks.splice(blockIndex + 1, 0, execExampleBlock);
-
-                        } // for loop on argset
                         // Clean up temporary files
                         //fs.unlinkSync(tmpFilePath);
                         //fs.unlinkSync(tmpExePath);
+
                     } catch (err) {
-                        logger.error(`Error processing C++ block: ${err.message}`);
+                        logger.error(`Error processing ${languageName} block: ${err.message}`);
+                        process.exit(1);
                     }
                 }
             }

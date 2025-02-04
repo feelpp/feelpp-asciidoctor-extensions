@@ -13,10 +13,11 @@
   },
   "keywords": [],
   "author": "Guillaume Grossetie <ggrossetie@yuzutech.fr>",
-  "contributors" : [ 
+  "contributors": [
     "Christophe Prud'homme <christophe.prudhomme@cemosis.fr>",
     "Javier Cladellas <javier.cladellas@cemosis.fr>",
-    "Vincent Chabannes <vincent.chabannes@cemosis.fr>"
+    "Vincent Chabannes <vincent.chabannes@cemosis.fr>",
+    "Thomas Saigre <thomas.saigre@cemosis.fr>"
   ],
   "license": "MIT",
   "bugs": {
@@ -26,8 +27,9 @@
   "devDependencies": {
     "@asciidoctor/core": "~2.2",
     "chai": "~4.3",
+    "handlebars": "^4.7.8",
     "libnpmpublish": "^4.0.2",
-    "mocha": "~10.2",
+    "mocha": "^10.8.2",
     "pacote": "^12.0.2"
   }
 }
