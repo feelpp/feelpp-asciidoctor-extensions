@@ -127,7 +127,10 @@ function compileCode(blockCommand, compilArgs, sourceDirPath, filePath, exePath)
     let compileCommand = '';
     let compileResultStdout = '';
 
-    if (blockCommand === 'sh' || blockCommand === 'cpp') {
+    if (blockCommand === 'sh' || blockCommand === 'cpp' || blockCommand === 'openmp') {
+        if (blockCommand === 'openmp') {
+            compilArgs += ' -fopenmp';
+        }
         [compileCommand, compileResultStdout] = compileCPP(sourceDirPath, compilArgs, baseSourceFilePath, baseExePath);
     }
     else if (blockCommand === 'c') {
@@ -285,7 +288,7 @@ module.exports.register = function register(registry) {
                         const blockCommand = block.getAttribute('compile', 'make');
                         const compilArgs = block.getAttribute('comp-args', '-std=c++17');
 
-                        if (!['sh', 'cpp', 'c', 'make', 'mpi'].includes(blockCommand)) {
+                        if (!['sh', 'cpp', 'c', 'make', 'mpi', 'openmp',].includes(blockCommand)) {
                             continue;
                         }
                         let [compileCommand, compileResultStdout] = compileCode(blockCommand, compilArgs, sourceDirPath, tmpFilePath, tmpExePath);
