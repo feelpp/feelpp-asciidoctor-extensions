@@ -65,12 +65,22 @@ function setup(block, adocbasefname) {
     else {
         throw new Error(`Unsupported language: ${attribute}`);
     }
-    const tmpExePath = path.join(sourceDirPath, `${exeFilename}`);
+    const execFilenameTmp = block.getAttribute('exec', '');
+    if (execFilenameTmp) {
+        exeFilename = execFilenameTmp;
+    }
+    const blockCommand = block.getAttribute('compile', 'make');
+    let build_dir = '';
+    if (blockCommand === 'cmake') {
+        build_dir = block.getAttribute('build', 'build');
+    }
+
+    const tmpExePath = path.join(sourceDirPath, build_dir, exeFilename);
     console.log(`Writing ${languageName} code to ${tmpFilePath}`);
     const wrappedCode = wrapCode(code, filename);
     fs.writeFileSync(tmpFilePath, wrappedCode);
 
-    return [sourceDirPath, tmpFilePath, languageName, tmpExePath]
+    return [sourceDirPath, tmpFilePath, languageName, tmpExePath, build_dir]
 }
 
 
@@ -119,7 +129,27 @@ function compileMPI(sourceDirPath, baseSourceFilePath, baseExePath) {
     return [compileCommand, compileResult.stdout.toString('utf8')];
 }
 
-function compileCode(blockCommand, compilArgs, sourceDirPath, filePath, exePath) {
+function setupCMake(sourceDirPath, buildDir)
+{
+    console.log("Setting up CMake");
+
+    let configureCommand = `cmake -B ${buildDir} .`;
+    let compileCommand = `cmake --build ${buildDir}`;
+
+    let configureResult = child_process.spawnSync('cmake', ['-B', buildDir, '.'], { cwd: sourceDirPath, shell: true });
+    if (configureResult.error || configureResult.status !== 0) {
+        throw new CompilationError(["[cmake] configure error: ", configureResult.error, configureResult.stderr.toString(), " ", sourceDirPath, " ", buildDir ]);
+    }
+
+    let compileResult = child_process.spawnSync('cmake', ['--build', buildDir], { cwd: sourceDirPath, shell: true });
+    if (compileResult.error || compileResult.status !== 0) {
+        throw new CompilationError(["[cmake] compilation error: ", compileResult.error, compileResult.stderr.toString(), " ", sourceDirPath, " ", buildDir ]);
+    }
+
+    return [`${configureCommand}\n${compileCommand}`, configureResult.stdout.toString('utf8')];
+}
+
+function compileCode(blockCommand, compilArgs, sourceDirPath, filePath, exePath, buildDir) {
     let baseSourceFilePath = path.basename(filePath);
     let baseExePath = path.basename(exePath);
 
@@ -142,13 +172,16 @@ function compileCode(blockCommand, compilArgs, sourceDirPath, filePath, exePath)
     else if (blockCommand === 'make') {
         [compileCommand, compileResultStdout] = compileMake(sourceDirPath, baseExePath);
     }
+    else if (blockCommand === 'cmake') {
+        [compileCommand, compileResultStdout] = setupCMake(sourceDirPath, buildDir);
+    }
 
     return [compileCommand, compileResultStdout];
 }
 
 
 function embedCompilationCommand(self, block, compileCommand, compileResultStdout){
-    let compileDisplayLine = `$ ${compileCommand}`;
+    let compileDisplayLine = compileCommand.split('\n').map(line => `$ ${line}`).join('\n');
     // console.log(`compileDisplayLine: ${compileDisplayLine}`);
     const compileExampleBlock = self.createExampleBlock(block, '', [], { 'content_model': 'compound', 'context': 'sidecar examp' })
     compileExampleBlock.setTitle('Compilation Command Line')
@@ -179,7 +212,7 @@ function embedCompilationCommand(self, block, compileCommand, compileResultStdou
 }
 
 
-function embedExecutionResult(self, block, blockCommand, filePath, exePath){
+function embedExecutionResult(self, block, blockCommand, filePath, exePath, buildDir){
     let baseExePath = path.basename(exePath);
 
     // Extract inputs from the 'inputs' attribute
@@ -194,8 +227,8 @@ function embedExecutionResult(self, block, blockCommand, filePath, exePath){
         // console.log(`exeOptions: ${exeOptions}`);
 
         // Execute compiled code
-        if (!fs.existsSync(path.join(path.dirname(filePath), baseExePath))) {
-            throw new Error(`Expected compiled executable not found at: ${path.join(path.dirname(filePath), baseExePath)}`);
+        if (!fs.existsSync(exePath)) {
+            throw new Error(`Expected compiled executable not found at: ${exePath}`);
         }
         //let executionResult = child_process.spawnSync(tmpExePath);
 
@@ -204,7 +237,12 @@ function embedExecutionResult(self, block, blockCommand, filePath, exePath){
             let np = block.getAttribute('np', '2');
             execPrefix = `mpirun -np ${np} `;
         }
-        let executionCmdLine = `${execPrefix}./${baseExePath}`
+
+        if (buildDir === '') {
+            buildDir = '.';
+        }
+
+        let executionCmdLine = `${execPrefix}${buildDir}/${baseExePath}`
         let executionResult = child_process.spawnSync(executionCmdLine, exeOptions, {
             cwd: path.dirname(filePath),
             shell: true,
@@ -280,7 +318,8 @@ module.exports.register = function register(registry) {
                     const parentBlocks = parent.getBlocks()
                     const blockIndex = parentBlocks['$find_index'](block) + 1
 
-                    let [sourceDirPath, tmpFilePath, languageName, tmpExePath] = setup(block, adocbasefname);
+                    let [sourceDirPath, tmpFilePath, languageName, tmpExePath, buildDir] = setup(block, adocbasefname);
+                    console.log(`[cpp-dynamic-processor] Found ${languageName} block`);
 
                     // try {
 
@@ -288,10 +327,11 @@ module.exports.register = function register(registry) {
                         const blockCommand = block.getAttribute('compile', 'make');
                         const compilArgs = block.getAttribute('comp-args', '-std=c++17');
 
-                        if (!['sh', 'cpp', 'c', 'make', 'mpi', 'openmp',].includes(blockCommand)) {
+                        // console.log(`[cpp-dynamic-processor] blockCommand: ${blockCommand}`);
+                        if (!['sh', 'cpp', 'c', 'make', 'mpi', 'openmp', 'cmake'].includes(blockCommand)) {
                             continue;
                         }
-                        let [compileCommand, compileResultStdout] = compileCode(blockCommand, compilArgs, sourceDirPath, tmpFilePath, tmpExePath);
+                        let [compileCommand, compileResultStdout] = compileCode(blockCommand, compilArgs, sourceDirPath, tmpFilePath, tmpExePath, buildDir);
 
                         // Embed Compilation Command and result in document
                         let compileExampleBlock = embedCompilationCommand(self, block, compileCommand, compileResultStdout);
@@ -303,8 +343,10 @@ module.exports.register = function register(registry) {
                             continue;
                         }
 
+                        // console.log(`[cpp-dynamic-processor] tmpExePath: ${tmpExePath}`);
+
                         // Embed execution result in document
-                        let execExampleBlock = embedExecutionResult(self, block, blockCommand, tmpFilePath, tmpExePath);
+                        let execExampleBlock = embedExecutionResult(self, block, blockCommand, tmpFilePath, tmpExePath, buildDir);
                         parentBlocks.splice(blockIndex + 1, 0, execExampleBlock);
 
 
