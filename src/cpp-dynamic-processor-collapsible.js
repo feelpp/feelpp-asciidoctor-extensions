@@ -74,10 +74,22 @@ function setup(block, adocbasefname) {
 }
 
 
-function compileCPP(sourceDirPath, baseSourceFilePath, baseExePath) {
-    let compileCommand = `g++ -std=c++17 ${baseSourceFilePath} -o ${baseExePath}`;
+function compileCPP(sourceDirPath, compilArgs, baseSourceFilePath, baseExePath) {
+    let compileCommand = `g++ ${compilArgs} ${baseSourceFilePath} -o ${baseExePath}`;
 
-    let compileResult = child_process.spawnSync('g++', ['-std=c++17', baseSourceFilePath, '-o', baseExePath], { cwd: sourceDirPath, shell: true });
+    let compileResult = child_process.spawnSync('g++', [compilArgs, baseSourceFilePath, '-o', baseExePath], { cwd: sourceDirPath, shell: true });
+    if (compileResult.error || compileResult.status !== 0) {
+        throw new CompilationError(["[sh] compilation error: >>", compileResult.stderr.toString(), "<< ", sourceDirPath, " ", baseExePath ]);
+    }
+
+    return [compileCommand, compileResult.stdout.toString('utf8')];
+}
+
+
+function compileC(sourceDirPath, compilArgs, baseSourceFilePath, baseExePath) {
+    let compileCommand = `gcc ${compilArgs} ${baseSourceFilePath} -o ${baseExePath}`;
+
+    let compileResult = child_process.spawnSync('gcc', [compilArgs, baseSourceFilePath, '-o', baseExePath], { cwd: sourceDirPath, shell: true });
     if (compileResult.error || compileResult.status !== 0) {
         throw new CompilationError(["[sh] compilation error: >>", compileResult.stderr.toString(), "<< ", sourceDirPath, " ", baseExePath ]);
     }
@@ -87,6 +99,7 @@ function compileCPP(sourceDirPath, baseSourceFilePath, baseExePath) {
 
 function compileMake(sourceDirPath, baseExePath) {
     let compileCommand = `make ${baseExePath}`;
+    console.log(`[make] compileCommand: ${compileCommand}`);
 
     let compileResult = child_process.spawnSync('make', [baseExePath], { cwd: sourceDirPath, shell: true });
     if (compileResult.error || compileResult.status !== 0) {
@@ -106,15 +119,19 @@ function compileMPI(sourceDirPath, baseSourceFilePath, baseExePath) {
     return [compileCommand, compileResult.stdout.toString('utf8')];
 }
 
-function compileCode(blockCommand, sourceDirPath, filePath, exePath) {
+function compileCode(blockCommand, compilArgs, sourceDirPath, filePath, exePath) {
     let baseSourceFilePath = path.basename(filePath);
     let baseExePath = path.basename(exePath);
+
 
     let compileCommand = '';
     let compileResultStdout = '';
 
     if (blockCommand === 'sh' || blockCommand === 'cpp') {
-        [compileCommand, compileResultStdout] = compileCPP(sourceDirPath, baseSourceFilePath, baseExePath);
+        [compileCommand, compileResultStdout] = compileCPP(sourceDirPath, compilArgs, baseSourceFilePath, baseExePath);
+    }
+    else if (blockCommand === 'c') {
+        [compileCommand, compileResultStdout] = compileC(sourceDirPath, compilArgs, baseSourceFilePath, baseExePath);
     }
     else if (blockCommand === 'mpi') {
         [compileCommand, compileResultStdout] = compileMPI(sourceDirPath, baseSourceFilePath, baseExePath);
@@ -262,15 +279,16 @@ module.exports.register = function register(registry) {
 
                     let [sourceDirPath, tmpFilePath, languageName, tmpExePath] = setup(block, adocbasefname);
 
-                    try {
+                    // try {
 
                         // Compile C++ code
                         const blockCommand = block.getAttribute('compile', 'make');
+                        const compilArgs = block.getAttribute('comp-args', '-std=c++17');
 
-                        if (!['sh', 'make', 'mpi'].includes(blockCommand)) {
+                        if (!['sh', 'cpp', 'c', 'make', 'mpi'].includes(blockCommand)) {
                             continue;
                         }
-                        let [compileCommand, compileResultStdout] = compileCode(blockCommand, sourceDirPath, tmpFilePath, tmpExePath);
+                        let [compileCommand, compileResultStdout] = compileCode(blockCommand, compilArgs, sourceDirPath, tmpFilePath, tmpExePath);
 
                         // Embed Compilation Command and result in document
                         let compileExampleBlock = embedCompilationCommand(self, block, compileCommand, compileResultStdout);
@@ -291,10 +309,10 @@ module.exports.register = function register(registry) {
                         //fs.unlinkSync(tmpFilePath);
                         //fs.unlinkSync(tmpExePath);
 
-                    } catch (err) {
-                        logger.error(`Error processing ${languageName} block: ${err.message}`);
-                        process.exit(1);
-                    }
+                    // } catch (err) {
+                    //     logger.error(`Error processing ${languageName} block: ${err.message}`);
+                    //     process.exit(1);
+                    // }
                 }
             }
             return doc;
