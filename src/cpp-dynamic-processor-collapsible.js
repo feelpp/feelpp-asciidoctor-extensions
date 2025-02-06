@@ -69,7 +69,7 @@ function setup(block, adocbasefname) {
     if (execFilenameTmp) {
         exeFilename = execFilenameTmp;
     }
-    const blockCommand = block.getAttribute('compile', 'make');
+    const blockCommand = block.getAttribute('compile', 'sh');
     let build_dir = '';
     if (blockCommand === 'cmake') {
         build_dir = block.getAttribute('build', 'build');
@@ -321,7 +321,7 @@ module.exports.register = function register(registry) {
                     let [sourceDirPath, tmpFilePath, languageName, tmpExePath, buildDir] = setup(block, adocbasefname);
                     console.log(`[cpp-dynamic-processor] Found ${languageName} block`);
 
-                    // try {
+                    try {
 
                         // Compile C++ code
                         const blockCommand = block.getAttribute('compile', 'make');
@@ -354,10 +354,10 @@ module.exports.register = function register(registry) {
                         //fs.unlinkSync(tmpFilePath);
                         //fs.unlinkSync(tmpExePath);
 
-                    // } catch (err) {
-                    //     logger.error(`Error processing ${languageName} block: ${err.message}`);
-                    //     process.exit(1);
-                    // }
+                    } catch (err) {
+                        logger.error(`Error processing ${languageName} block: ${err.message}`);
+                        process.exit(1);
+                    }
                 }
             }
             return doc;
