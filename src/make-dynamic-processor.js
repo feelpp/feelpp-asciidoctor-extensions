@@ -12,11 +12,10 @@ module.exports.register = function register(registry) {
         self.process(function (doc) {
             const blocks = doc.findBy({ context: 'listing', style: 'source' })
                 .filter((b) => b.getAttribute('language') === 'makefile' && b.isOption('dynamic'));
-            doc.findBy({ context: 'listing', style: 'source' }).filter((b) => console.log("language attr: ", b.getAttribute('language'), " ", b.isOption('dynamic')));
             if (blocks && blocks.length > 0) {
                 for (const block of blocks) {
                     try {
-                        console.log("[makefile] Extracted Attributes:", block.getAttributes());
+                        // console.log("[makefile] Extracted Attributes:", block.getAttributes());
 
                         const adocbasefname = path.parse(doc.getAttribute('docfile')).name;
                         const parent = block.getParent()

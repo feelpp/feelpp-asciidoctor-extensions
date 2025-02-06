@@ -108,12 +108,12 @@ function compileC(sourceDirPath, compilArgs, baseSourceFilePath, baseExePath) {
 }
 
 function compileMake(sourceDirPath, baseExePath) {
-    let compileCommand = `make ${baseExePath}`;
+    let compileCommand = `make`;
     console.log(`[make] compileCommand: ${compileCommand}`);
 
-    let compileResult = child_process.spawnSync('make', [baseExePath], { cwd: sourceDirPath, shell: true });
+    let compileResult = child_process.spawnSync('make', { cwd: sourceDirPath, shell: true });
     if (compileResult.error || compileResult.status !== 0) {
-        throw new CompilationError(["[make] compilation error: ",  sourceDirPath, " ", baseExePath ]);
+        throw new CompilationError(["[make] compilation error: ",  sourceDirPath, " ", baseExePath, "\n", compileResult.stdout.toString('utf8') ]);
     }
     return [compileCommand, compileResult.stdout.toString('utf8')];
 
