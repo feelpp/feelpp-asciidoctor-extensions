@@ -1,4 +1,4 @@
-name: Build JavaScript
+name: CI AsciiDoc Extensions
 
 on:
   push:
