@@ -92,7 +92,7 @@ module.exports.register = function register(registry, { contentCatalog, file }) 
                 // Build an xref-like reference; adjust the format as needed for your setup
                 const resource = contentCatalog.resolveResource(key,file.src, 'attachment', ['attachment']);
                 if (resource && resource.pub && resource.pub.url) {
-                  const resolvedPath = ospath.join(process.cwd(), outputDir, resource.pub.url);
+                  const resolvedPath = ospath.join(outputDir, resource.pub.url);
                   logger.info('resolvedPath for ',key,' :', resolvedPath);
                   // Optionally check if the file exists
                   if (!fs.existsSync(resolvedPath)) {
