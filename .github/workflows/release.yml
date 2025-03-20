@@ -1,34 +1,88 @@
-name: Release
+name: Release AsciiDoc Extensions
 
 on:
-  push:
-    tags:
-      - 'v*' # Push events to matching v*, i.e. v1.0, v2.1.3
+  workflow_dispatch:
+    inputs:
+      major:
+        description: 'Major version'
+        required: true
+        default: 0
+      minor:
+        description: 'Minor version'
+        required: true
+        default: 0
+      patch:
+        description: 'Patch version'
+        required: true
+        default: 0
+      prerelease:
+        description: 'Prerelease version'
+        type: choice
+        required: false
+        options:
+          - alpha
+          - beta
+          - rc
+          - preview
+          - ''
+        default: ''
+      prerelease_id:
+        description: 'Prerelease identifier'
+        required: false
+        default: ''
+
 
 jobs:
-  build:
+  release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
-        with:
-          node-version: 18
-      - name: Install dependencies
+      - uses: actions/checkout@v4
+      - run: |
+          git config user.name "${{ github.actor }}"
+          git config user.email "${{ github.actor }}@users.noreply.github.com"
+      - name: Compute Version
+        id: version
         run: |
-          npm ci
-      - uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-      - run: pip install ipython plotly pandas
-      - name: Test
+          VERSION="${{ github.event.inputs.major }}.${{ github.event.inputs.minor }}.${{ github.event.inputs.patch }}"
+          if [ "${{ github.event.inputs.prerelease }}" != "" -a "${{ github.event.inputs.prerelease_id }}" != "''" ]; then
+            VERSION="${VERSION}-${{ github.event.inputs.prerelease }}.${{ github.event.inputs.prerelease_id }}"
+          elif [ "${{ github.event.inputs.prerelease }}" != "" ]; then
+            VERSION="${VERSION}-${{ github.event.inputs.prerelease }}.1"
+          fi
+          echo "Computed version: $VERSION"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+      - name: Create and push tag
+        id: tag
         run: |
-          npm t
+          TAG=${{ steps.version.outputs.version }}
+          echo "Creating tag $TAG"
+          # Create tag locally if it doesn't exist.
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists locally."
+          else
+            git tag "$TAG"
+          fi
+          # Push tag to remote if not already pushed.
+          if git ls-remote --tags origin | grep -q "refs/tags/$TAG$"; then
+            echo "Tag $TAG already exists on remote."
+          else
+            git push origin "$TAG"
+          fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+      - name: Create GitHub Release via gh CLI
+        run: |
+          TAG=${{ steps.tag.outputs.tag }}
+          echo "Creating release for tag: $TAG"
+          gh release create "$TAG" --title "$TAG" --notes "Release $TAG"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   publish:
-    needs: build
     runs-on: ubuntu-latest
+    needs: release
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 18
       # install dependencies
@@ -41,14 +95,3 @@ jobs:
           NPM_AUTH_TOKEN: ${{ secrets.NPMJS_TOKEN }}
         run: |
           ./tasks/publish.sh
-      # create the GitHub release
-      - name: Create release
-        id: create_release
-        uses: actions/create-release@v1.1.4
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ github.ref }}
-          release_name: "${{ github.ref }}"
-          draft: false
-          prerelease: false
