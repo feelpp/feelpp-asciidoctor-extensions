@@ -69,7 +69,7 @@ class ExecutionError extends Error {
  * - https://pypi.org/project/ipython/ must be installed and available in the python3 environment
  * - all required dependencies must be installed and available in the python3 environment (for instance, if you are using pandas, you must install it)
  */
-module.exports.register = function register(registry) {
+module.exports.register = function register(registry, { contentCatalog, file }) {
   const logger = Opal.Asciidoctor.LoggerManager.getLogger()
   registry.treeProcessor(function () {
     const self = this
@@ -78,10 +78,31 @@ module.exports.register = function register(registry) {
         .filter((b) => b.getAttribute('language') === 'python' && b.isOption('dynamic'))
       if (blocks && blocks.length > 0 && doc.getAttribute('dynamic-blocks') !== undefined) {
         const ipython = ipythonTemplate(blocks.map((b) => {
+          const attributes = b.getDocument().getAttributes();
+          const outputDir = attributes['output-dir'] || 'public'; // fallback if not set
+          //console.log(attributes)
           const code = b.getSourceLines().join('\n')
             .replaceAll(calloutRx, '')
             .replaceAll(figShowRx, `import sys; fig.write_html(file=sys.stdout, include_plotlyjs=False)`)
             .replaceAll(plotterShowRx, `import sys; sys.stdout.write(plotter.export_html(None).getvalue())`)
+            // Replace attachment$ tokens with the resolved URL
+            .replaceAll(/xref:([^[]+)\[\]/g, (match, key) => {
+                // For example, assume that the attachment reference is constructed from the attachmentsdir attribute
+                const base = attributes.attachmentsdir || '';
+                // Build an xref-like reference; adjust the format as needed for your setup
+                const resource = contentCatalog.resolveResource(key,file.src, 'attachment', ['attachment']);
+                if (resource && resource.pub && resource.pub.url) {
+                  const resolvedPath = ospath.join(process.cwd(), outputDir, resource.pub.url);
+                  logger.info('resolvedPath for ',key,' :', resolvedPath);
+                  // Optionally check if the file exists
+                  if (!fs.existsSync(resolvedPath)) {
+                    logger.warn(`File does not exist at: ${resolvedPath}`);
+                  }
+                  return resolvedPath;
+                }
+                return match;
+            });
+         //console.log(JSON.stringify(code))
           return JSON.stringify(code)
         }))
         logger.info('Processing dynamic blocks...')
