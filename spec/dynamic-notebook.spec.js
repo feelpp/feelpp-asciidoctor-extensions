@@ -7,6 +7,22 @@ const expect = chai.expect
 const dynamicNotebookExt = require('../src/dynamic-notebook-processor.js')
 const asciidoctor = require('@asciidoctor/core')()
 
+// Create a stub contentCatalog for tests.
+const stubContentCatalog = {
+  resolveResource: (key, fileSrc, type, tags) => {
+    // For tests that use attachment references, you can simulate a resource.
+    // For example, if the key includes "attachment$data", return a fake resource.
+    if (key.includes('attachment$data')) {
+      return { pub: { url: 'attachment/data/resolved.json' } };
+    }
+    // Otherwise, return null (or a default value) if no resource should be resolved.
+    return null;
+  }
+};
+
+// Create a dummy file object to simulate the file source.
+const dummyFile = { src: 'dummy.adoc' };
+
 describe('Dynamic Notebook', () => {
   describe('When extension is registered', () => {
     it('should execute code using Python', () => {
@@ -19,7 +35,7 @@ print('hello')
 ----
 `
       const registry = asciidoctor.Extensions.create()
-      dynamicNotebookExt.register(registry)
+      dynamicNotebookExt.register(registry, { contentCatalog: stubContentCatalog, file: dummyFile })
       const doc = asciidoctor.load(input, { extension_registry: registry })
       const html = doc.convert()
       expect(html).to.equal(`<div class="listingblock">
@@ -48,7 +64,7 @@ invalid_python
 ----
 `
       const registry = asciidoctor.Extensions.create()
-      dynamicNotebookExt.register(registry)
+      dynamicNotebookExt.register(registry, { contentCatalog: stubContentCatalog, file: dummyFile })
       try {
         const doc = asciidoctor.load(input, { extension_registry: registry })
         expect.fail('Should throw an error when fail-on-error attribute is define')
@@ -66,7 +82,7 @@ invalid_python
 ----
 `
       const registry = asciidoctor.Extensions.create()
-      dynamicNotebookExt.register(registry)
+      dynamicNotebookExt.register(registry, { contentCatalog: stubContentCatalog, file: dummyFile })
       const doc = asciidoctor.load(input, { extension_registry: registry })
       const html = doc.convert()
       expect(html).to.equal(`<div class="listingblock">
@@ -101,7 +117,7 @@ print('hello')
 ----
 `
       const registry = asciidoctor.Extensions.create()
-      dynamicNotebookExt.register(registry)
+      dynamicNotebookExt.register(registry, { contentCatalog: stubContentCatalog, file: dummyFile })
       const doc = asciidoctor.load(input, { extension_registry: registry })
       const html = doc.convert()
       expect(html).to.equal(`<div class="listingblock">
@@ -139,7 +155,7 @@ for fig in figs:
 ----
 `
       const registry = asciidoctor.Extensions.create()
-      dynamicNotebookExt.register(registry)
+      dynamicNotebookExt.register(registry, { contentCatalog: stubContentCatalog, file: dummyFile })
       const doc = asciidoctor.load(input, { extension_registry: registry })
       const html = doc.convert()
       expect(html).to.contains(`<div class="listingblock">
@@ -175,7 +191,7 @@ else:
     print("x is 20 or greater")
 ----`
       const registry = asciidoctor.Extensions.create()
-      dynamicNotebookExt.register(registry)
+      dynamicNotebookExt.register(registry, { contentCatalog: stubContentCatalog, file: dummyFile })
       const doc = asciidoctor.load(input, { extension_registry: registry })
       const html = doc.convert()
       expect(html).to.eq(`<div class="listingblock">
@@ -228,7 +244,7 @@ x = math.cos(math.pi); print(f"x={x}") <5>
 <.> use \`print\` to display the result of a command in a script. In the interactive interpreter, the result is displayed by default. use \`f\` to format the output.
 <.> In Python, there is no need to use \`;\` at the end of a statement unless you want to put multiple statements on a single line.`
       const registry = asciidoctor.Extensions.create()
-      dynamicNotebookExt.register(registry)
+      dynamicNotebookExt.register(registry, { contentCatalog: stubContentCatalog, file: dummyFile })
       const doc = asciidoctor.load(input, { extension_registry: registry })
       const html = doc.convert()
       expect(html).to.eq(`<div class="listingblock">
