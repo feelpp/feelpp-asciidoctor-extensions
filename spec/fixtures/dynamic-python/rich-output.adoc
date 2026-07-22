@@ -1,0 +1,14 @@
+= Rich output contract fixture
+:dynamic-blocks:
+
+[#matplotlib-output]
+[%dynamic%open,python,fail-on-error=,output=matplotlib,figure-alt="A labelled deterministic line",figure-caption="A two-point deterministic example"]
+----
+import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots()
+ax.plot([0, 1], [0, 1], linestyle="--", marker="o")
+ax.set(title="Deterministic line", xlabel="x", ylabel="y")
+print("slope=1")
+plt.show()
+----

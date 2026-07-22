@@ -1,0 +1,9 @@
+= Strict Python failure
+:dynamic-blocks:
+:dynamic-blocks-strict:
+
+[#required-failure]
+[%dynamic,python]
+----
+raise RuntimeError("intentional contract failure")
+----

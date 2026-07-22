@@ -1,0 +1,11 @@
+= Timeout contract fixture
+:dynamic-blocks:
+:dynamic-blocks-strict:
+:dynamic-blocks-timeout-seconds: 1
+
+[#bounded-execution]
+[%dynamic,python,fail-on-error=]
+----
+while True:
+    pass
+----

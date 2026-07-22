@@ -1,0 +1,10 @@
+= Output limit contract fixture
+:dynamic-blocks:
+:dynamic-blocks-strict:
+:dynamic-blocks-max-output-bytes: 1024
+
+[#bounded-output]
+[%dynamic,python,fail-on-error=]
+----
+print("x" * 1_000_000)
+----
