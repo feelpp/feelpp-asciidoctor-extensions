@@ -1,6 +1,7 @@
 /* global Opal */
 const child_process = require('node:child_process')
 const fs = require('node:fs')
+const os = require('node:os')
 const ospath = require('node:path')
 
 //const conumRx = /\s*<i class="conum" data-value="[0-9]+"><\/i><b>[^>]+<\/b>/g
@@ -11,6 +12,54 @@ const pyvistaContainerRx = /^var container = document\.querySelector\('.content'
 const pyvistaScriptRx = /(?<script><script .*<\/script>)/ms
 const pyvistaFaviconRx = /n\.setAttribute\("href","https:\/\/kitware.github.io\/vtk-js\/icon\/favicon-".concat\(t,"x"\).concat\(t,".png"\)\),/
 const plotlyPlotRx = /<div id="[^"]+" class="plotly-graph-div" .*<\/script>/gm
+const matplotlibPngRx = /^__FEELPP_MATPLOTLIB_PNG__([A-Za-z0-9+/=]+)$/gm
+const defaultTimeoutSeconds = 60
+const maximumTimeoutSeconds = 600
+const defaultMaximumOutputBytes = 5 * 1024 * 1024
+const absoluteMaximumOutputBytes = 100 * 1024 * 1024
+const isolatedEnvironmentPrefix = 'feelpp-asciidoc-python-'
+const environmentPassthroughKeys = [
+  'PATH',
+  'VIRTUAL_ENV',
+  'PYTHONHOME',
+  'PYTHONPATH',
+  'LD_LIBRARY_PATH',
+  'DYLD_LIBRARY_PATH',
+  'LANG',
+  'LC_ALL',
+  'LC_CTYPE',
+  'SYSTEMROOT',
+  'WINDIR',
+  'PATHEXT'
+]
+
+const escapeHtml = (value) => String(value)
+  .replaceAll('&', '&amp;')
+  .replaceAll('<', '&lt;')
+  .replaceAll('>', '&gt;')
+  .replaceAll('"', '&quot;')
+  .replaceAll("'", '&#39;')
+
+const matplotlibCapture = `
+import base64 as __feelpp_base64
+import io as __feelpp_io
+import matplotlib.pyplot as __feelpp_plt
+
+for __feelpp_number in __feelpp_plt.get_fignums():
+    __feelpp_figure = __feelpp_plt.figure(__feelpp_number)
+    __feelpp_buffer = __feelpp_io.BytesIO()
+    __feelpp_figure.savefig(
+        __feelpp_buffer,
+        format="png",
+        dpi=120,
+        bbox_inches="tight",
+        facecolor="white",
+        metadata={"Software": "Feel++ executable AsciiDoc"},
+    )
+    print("__FEELPP_MATPLOTLIB_PNG__" + __feelpp_base64.b64encode(__feelpp_buffer.getvalue()).decode("ascii"))
+    __feelpp_buffer.close()
+__feelpp_plt.close("all")
+`
 
 const ipythonTemplate = (pyCodes) => {
   return `from IPython.core.interactiveshell import InteractiveShell
@@ -45,9 +94,179 @@ sys.stderr.write(json.dumps(results))
 }
 
 class ExecutionError extends Error {
-  constructor(message) {
-    super(message)
-    this.name = "ExecutionError"
+  constructor(code, message, details = {}) {
+    if (message === undefined) {
+      message = code
+      code = 'execution-error'
+    }
+    super(`[${code}] ${message}`)
+    this.name = 'ExecutionError'
+    this.code = code
+    this.details = details
+  }
+
+  toJSON () {
+    return {
+      name: this.name,
+      code: this.code,
+      message: this.message,
+      details: this.details
+    }
+  }
+}
+
+const parsePositiveInteger = (doc, attribute, fallback, maximum) => {
+  const raw = doc.getAttribute(attribute)
+  if (raw === undefined || raw === '') return fallback
+  const value = Number(raw)
+  if (!Number.isSafeInteger(value) || value <= 0 || value > maximum) {
+    throw new ExecutionError(
+      'invalid-configuration',
+      `${attribute} must be a positive integer no greater than ${maximum}`,
+      { attribute, value: raw }
+    )
+  }
+  return value
+}
+
+const parseBoolean = (doc, attribute, fallback = false) => {
+  const raw = doc.getAttribute(attribute)
+  if (raw === undefined) return fallback
+  if (raw === '' || raw === true || ['true', 'yes', '1'].includes(String(raw).toLowerCase())) return true
+  if (raw === false || ['false', 'no', '0'].includes(String(raw).toLowerCase())) return false
+  throw new ExecutionError(
+    'invalid-configuration',
+    `${attribute} must be true, false, yes, no, 1, or 0`,
+    { attribute, value: raw }
+  )
+}
+
+const createIsolatedEnvironment = (temporaryDirectory, isolateUserSite) => {
+  const environment = {}
+  for (const key of environmentPassthroughKeys) {
+    if (process.env[key] !== undefined) environment[key] = process.env[key]
+  }
+
+  const cacheDirectory = ospath.join(temporaryDirectory, 'cache')
+  const ipythonDirectory = ospath.join(temporaryDirectory, 'ipython')
+  const matplotlibDirectory = ospath.join(temporaryDirectory, 'matplotlib')
+  for (const directory of [cacheDirectory, ipythonDirectory, matplotlibDirectory]) {
+    fs.mkdirSync(directory, { recursive: true })
+  }
+
+  const hostHome = process.env.HOME || temporaryDirectory
+  const isolatedEnvironment = {
+    ...environment,
+    HOME: isolateUserSite ? temporaryDirectory : hostHome,
+    XDG_CACHE_HOME: isolateUserSite
+      ? cacheDirectory
+      : (process.env.XDG_CACHE_HOME || ospath.join(hostHome, '.cache')),
+    IPYTHONDIR: isolateUserSite
+      ? ipythonDirectory
+      : (process.env.IPYTHONDIR || ospath.join(hostHome, '.ipython')),
+    MPLCONFIGDIR: isolateUserSite
+      ? matplotlibDirectory
+      : (process.env.MPLCONFIGDIR || ospath.join(hostHome, '.config', 'matplotlib')),
+    MPLBACKEND: 'Agg',
+    TMPDIR: temporaryDirectory,
+    TMP: temporaryDirectory,
+    TEMP: temporaryDirectory
+  }
+  if (isolateUserSite) isolatedEnvironment.PYTHONNOUSERSITE = '1'
+  return isolatedEnvironment
+}
+
+const abbreviated = (value, maximumLength = 4000) => {
+  const text = String(value || '')
+  if (text.length <= maximumLength) return text
+  return `${text.slice(0, maximumLength)}\n... diagnostic truncated ...`
+}
+
+const executePython = (script, configuration) => {
+  const temporaryDirectory = fs.mkdtempSync(ospath.join(os.tmpdir(), isolatedEnvironmentPrefix))
+  try {
+    const result = child_process.spawnSync(configuration.interpreter, ['-'], {
+      shell: false,
+      input: script,
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+      timeout: configuration.timeoutSeconds * 1000,
+      killSignal: 'SIGKILL',
+      maxBuffer: configuration.maximumOutputBytes * 2 + 64 * 1024,
+      env: createIsolatedEnvironment(temporaryDirectory, configuration.isolateUserSite)
+    })
+
+    if (result.error) {
+      if (result.error.code === 'ETIMEDOUT') {
+        throw new ExecutionError(
+          'execution-timeout',
+          `Python execution exceeded ${configuration.timeoutSeconds} seconds`,
+          { timeoutSeconds: configuration.timeoutSeconds }
+        )
+      }
+      if (result.error.code === 'ENOBUFS') {
+        throw new ExecutionError(
+          'output-limit-exceeded',
+          `Python execution exceeded the ${configuration.maximumOutputBytes}-byte output limit`,
+          { maximumOutputBytes: configuration.maximumOutputBytes }
+        )
+      }
+      if (result.error.code === 'ENOENT') {
+        throw new ExecutionError(
+          'interpreter-not-found',
+          `Python interpreter was not found: ${configuration.interpreter}`,
+          { interpreter: configuration.interpreter }
+        )
+      }
+      throw new ExecutionError(
+        'execution-spawn-failed',
+        `Unable to start Python: ${result.error.message}`,
+        { interpreter: configuration.interpreter, errorCode: result.error.code }
+      )
+    }
+
+    if (result.signal) {
+      throw new ExecutionError(
+        result.signal === 'SIGKILL' ? 'execution-timeout' : 'execution-signal',
+        `Python execution stopped with signal ${result.signal}`,
+        { signal: result.signal, timeoutSeconds: configuration.timeoutSeconds }
+      )
+    }
+    if (result.status !== 0) {
+      throw new ExecutionError(
+        'execution-process-failed',
+        `Python exited with status ${result.status}: ${abbreviated(result.stderr)}`,
+        { status: result.status, interpreter: configuration.interpreter }
+      )
+    }
+
+    let response
+    try {
+      response = JSON.parse(result.stderr)
+    } catch (error) {
+      throw new ExecutionError(
+        'invalid-execution-response',
+        `Python returned an invalid execution record: ${abbreviated(result.stderr)}`,
+        { parserMessage: error.message }
+      )
+    }
+    if (!Array.isArray(response)) {
+      throw new ExecutionError('invalid-execution-response', 'Python execution record must be an array')
+    }
+
+    const aggregateOutputBytes = response.reduce((total, item) => {
+      return total + Buffer.byteLength(String(item.stdout || '')) + Buffer.byteLength(String(item.stderr || ''))
+    }, 0)
+    if (aggregateOutputBytes > configuration.maximumOutputBytes) {
+      throw new ExecutionError(
+        'output-limit-exceeded',
+        `Python produced ${aggregateOutputBytes} bytes; the limit is ${configuration.maximumOutputBytes}`,
+        { aggregateOutputBytes, maximumOutputBytes: configuration.maximumOutputBytes }
+      )
+    }
+    return response
+  } finally {
+    fs.rmSync(temporaryDirectory, { recursive: true, force: true })
   }
 }
 
@@ -77,14 +296,58 @@ module.exports.register = function register(registry, { contentCatalog, file }) 
       const blocks = doc.findBy({ context: 'listing', style: 'source' })
         .filter((b) => b.getAttribute('language') === 'python' && b.isOption('dynamic'))
       if (blocks && blocks.length > 0 && doc.getAttribute('dynamic-blocks') !== undefined) {
+        const interpreter = String(doc.getAttribute('dynamic-python-interpreter') || 'python3').trim()
+        if (!interpreter) {
+          throw new ExecutionError(
+            'invalid-configuration',
+            'dynamic-python-interpreter must not be empty'
+          )
+        }
+        const timeoutSeconds = parsePositiveInteger(
+          doc,
+          'dynamic-blocks-timeout-seconds',
+          defaultTimeoutSeconds,
+          maximumTimeoutSeconds
+        )
+        const configuredMaximumOutputBytes = parsePositiveInteger(
+          doc,
+          'dynamic-blocks-max-output-bytes',
+          defaultMaximumOutputBytes,
+          absoluteMaximumOutputBytes
+        )
+        const strict = parseBoolean(doc, 'dynamic-blocks-strict', false)
+        const isolateUserSite = parseBoolean(doc, 'dynamic-python-isolate-user-site', false)
+        const executionConfiguration = {
+          interpreter,
+          timeoutSeconds,
+          maximumOutputBytes: configuredMaximumOutputBytes,
+          isolateUserSite
+        }
         const ipython = ipythonTemplate(blocks.map((b) => {
           const attributes = b.getDocument().getAttributes();
           const outputDir = attributes['output-dir'] || 'public'; // fallback if not set
           //console.log(attributes)
-          const code = b.getSourceLines().join('\n')
+          const matplotlibOutput = b.getAttribute('output') === 'matplotlib'
+          if (matplotlibOutput && !b.getAttribute('figure-alt')) {
+            throw new ExecutionError(
+              'missing-figure-alt',
+              'Matplotlib output requires a non-empty figure-alt attribute',
+              { blockId: b.getId() || null }
+            )
+          }
+          let code = b.getSourceLines().join('\n')
             .replaceAll(calloutRx, '')
-            .replaceAll(figShowRx, `import sys; fig.write_html(file=sys.stdout, include_plotlyjs=False)`)
-            .replaceAll(plotterShowRx, `import sys; sys.stdout.write(plotter.export_html(None).getvalue())`)
+          if (matplotlibOutput) {
+            code = code
+              .replaceAll(/(?:plt|pyplot)\.show\(\)/g, '')
+              .replaceAll(figShowRx, '')
+              .concat(matplotlibCapture)
+          } else {
+            code = code
+              .replaceAll(figShowRx, `import sys; fig.write_html(file=sys.stdout, include_plotlyjs=False)`)
+              .replaceAll(plotterShowRx, `import sys; sys.stdout.write(plotter.export_html(None).getvalue())`)
+          }
+          code = code
             // Replace attachment$ tokens with the resolved URL
             .replaceAll(/xref:([^[]+)\[\]/g, (match, key) => {
                 // For example, assume that the attachment reference is constructed from the attachmentsdir attribute
@@ -105,17 +368,15 @@ module.exports.register = function register(registry, { contentCatalog, file }) 
          //console.log(JSON.stringify(code))
           return JSON.stringify(code)
         }))
-        logger.info('Processing dynamic blocks...')
-        const result = child_process.spawnSync('python3', ['-'], {
-          shell: false,
-          input: ipython,
-          stdio: ['pipe', 'pipe', 'pipe'],
-          maxBuffer: 1024 * 1024 * 50
-        })
-        if (result.status !== 0) {
-          throw new ExecutionError(`Unable to execute python3! status: ${result.status}, stdout: ${result.stdout}, stderr: ${result.stderr}`)
+        logger.info(`Processing dynamic blocks with ${interpreter}...`)
+        const response = executePython(ipython, executionConfiguration)
+        if (response.length !== blocks.length) {
+          throw new ExecutionError(
+            'invalid-execution-response',
+            `Expected ${blocks.length} execution records but received ${response.length}`,
+            { expected: blocks.length, actual: response.length }
+          )
         }
-        const response = JSON.parse(result.stderr.toString('utf8'))
         for (const [index, block] of blocks.entries()) {
           try {
             const parent = block.getParent()
@@ -159,15 +420,44 @@ module.exports.register = function register(registry, { contentCatalog, file }) 
             }
             let source = result.stdout.toString('utf8')
             if (result.success === false) {
-              if (block.hasAttribute("fail-on-error")) {
+              const blockId = block.getId() || `dynamic-block-${index + 1}`
+              if (strict || block.hasAttribute('fail-on-error')) {
                 // noinspection ExceptionCaughtLocallyJS
-                throw new ExecutionError(result.stderr.toString('utf8') + " " + result.stdout.toString('utf8'))
+                throw new ExecutionError(
+                  'block-execution-failed',
+                  `Python block ${blockId} failed: ${abbreviated(`${result.stderr} ${result.stdout}`.trim())}`,
+                  { blockId, blockIndex: index, strict }
+                )
               } else {
-                logger.warn(`Execution is unsuccessful! ${source}`)
+                logger.warn(`Execution is unsuccessful in ${blockId}: ${abbreviated(source)}`)
               }
             }
+            if (block.getAttribute('output') === 'matplotlib') {
+              const images = Array.from(source.matchAll(matplotlibPngRx), (match) => match[1])
+              if (images.length === 0) {
+                throw new ExecutionError(
+                  'missing-matplotlib-output',
+                  'Matplotlib block produced no figure',
+                  { blockId: block.getId() || null }
+                )
+              }
+              source = source.replace(matplotlibPngRx, '').trim()
+              exampleBlock.addRole('dynamic-py-result')
+              exampleBlock.addRole('dynamic-py-result-matplotlib')
+              if (images.length > 1) exampleBlock.addRole('dynamic-py-result-matplotlib-grid')
+              if (source) {
+                exampleBlock.append(self.createLiteralBlock(exampleBlock, source, { role: 'dynamic-py-result-text' }))
+              }
+              const baseAlt = block.getAttribute('figure-alt')
+              const caption = block.getAttribute('figure-caption')
+              const figures = images.map((png, imageIndex) => {
+                const alt = images.length > 1 ? `${baseAlt} (figure ${imageIndex + 1} of ${images.length})` : baseAlt
+                const captionHtml = caption ? `<figcaption>${escapeHtml(caption)}</figcaption>` : ''
+                return `<figure class="dynamic-py-figure"><img src="data:image/png;base64,${png}" alt="${escapeHtml(alt)}">${captionHtml}</figure>`
+              })
+              exampleBlock.append(self.createPassBlock(exampleBlock, figures.join('\n')))
             // option for raw content (Plotly or PyVista)
-            if (block.isOption('raw')) {
+            } else if (block.isOption('raw')) {
               if (block.getAttribute('output') === 'pyvista') {
                 source = source.replace(pyvistaContainerRx, `var container = document.getElementById('pyvista-${index}')`)
                 source = source.replace(pyvistaFaviconRx, '')

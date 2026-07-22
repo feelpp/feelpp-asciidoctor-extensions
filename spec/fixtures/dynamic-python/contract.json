@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "requirements": [
+    {
+      "id": "shared-session",
+      "importance": "P0",
+      "fixture": "success.adoc",
+      "expected": "implemented"
+    },
+    {
+      "id": "strict-errors",
+      "importance": "P0",
+      "fixture": "strict-error.adoc",
+      "expected": "implemented-page-and-block"
+    },
+    {
+      "id": "page-timeout",
+      "importance": "P0",
+      "fixture": "timeout.adoc",
+      "expected": "implemented"
+    },
+    {
+      "id": "aggregate-output-limit",
+      "importance": "P0",
+      "fixture": "oversized-output.adoc",
+      "expected": "implemented"
+    },
+    {
+      "id": "isolated-environment",
+      "importance": "P0",
+      "fixture": "isolation.adoc",
+      "expected": "implemented"
+    },
+    {
+      "id": "matplotlib-mime-output",
+      "importance": "P1",
+      "fixture": "rich-output.adoc",
+      "expected": "implemented-png"
+    }
+  ]
+}

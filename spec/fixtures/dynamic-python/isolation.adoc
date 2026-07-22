@@ -1,0 +1,12 @@
+= Isolated environment contract fixture
+:dynamic-blocks:
+:dynamic-blocks-strict:
+
+[#isolated-process]
+[%dynamic,python,fail-on-error=]
+----
+import os
+
+print(f"secret-visible={'FEELPP_TEST_SECRET' in os.environ}")
+print(f"isolated-temporary-directory={os.environ['TMPDIR']}")
+----

@@ -8,11 +8,16 @@ on:
     branches:
       - '*'
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
+      with:
+        persist-credentials: false
     - name: Set up Node 18
       uses: actions/setup-node@v3
       with:
@@ -22,8 +27,8 @@ jobs:
         npm ci
     - uses: actions/setup-python@v4
       with:
-        python-version: '3.10'
-    - run: pip install ipython plotly pandas
+        python-version: '3.12'
+    - run: pip install ipython plotly pandas matplotlib
     - name: Test
       run: |
         npm t

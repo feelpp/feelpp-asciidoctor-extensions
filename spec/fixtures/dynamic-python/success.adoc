@@ -1,0 +1,16 @@
+= Deterministic Python execution
+:dynamic-blocks:
+
+[#first-value]
+[%dynamic%open,python,fail-on-error=]
+----
+value = 6 * 7
+print(f"value={value}")
+----
+
+[#shared-state]
+[%dynamic%open,python,fail-on-error=]
+----
+assert value == 42
+print("shared-state=ok")
+----
