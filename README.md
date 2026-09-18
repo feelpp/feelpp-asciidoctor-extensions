@@ -28,3 +28,40 @@ The child process receives an allowlisted environment. Arbitrary tokens and cred
 ====
 This feature executes trusted documentation code; it is not an operating-system sandbox. Run it in a job with read-only repository permissions, no publishing credentials, no private content checkout, and appropriate container or runner isolation.
 ====
+
+== Releases
+
+Releases are published from GitHub Actions using npm trusted publishing (OIDC); no npm access token is stored in the repository.
+
+Before the first release, configure a trusted publisher for `@feelpp/asciidoctor-extensions` on npm with:
+
+* Organization or user: `feelpp`
+* Repository: `feelpp-asciidoctor-extensions`
+* Workflow filename: `release.yml`
+* Environment name: `npm`
+* Allowed action: `npm publish`
+
+The release workflow runs on tags named `v*`, tests the package, installs npm 11.5.1 for OIDC trusted publishing, publishes prereleases under the npm `next` dist-tag and stable versions under `latest`, then creates the matching GitHub Release.
+
+To publish a prerelease:
+
+[source,bash]
+----
+npm version prerelease --preid=rc
+git push origin main --follow-tags
+----
+
+To publish a stable release:
+
+[source,bash]
+----
+npm version 1.0.0
+git push origin main --follow-tags
+----
+
+Confirm the publication with:
+
+[source,bash]
+----
+npm view @feelpp/asciidoctor-extensions dist-tags
+----
