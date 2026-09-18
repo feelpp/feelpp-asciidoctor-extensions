@@ -21,7 +21,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Install Python test dependencies
-        run: python -m pip install ipython matplotlib plotly
+        run: python -m pip install ipython matplotlib pandas plotly
       - name: Test
         run: npm test
 
